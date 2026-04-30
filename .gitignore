@@ -164,3 +164,8 @@ cython_debug/
 # Added by TrueMyst
 !{example}.env
 posters/*
+
+# Local planning files
+findings.md
+progress.md
+task_plan.md

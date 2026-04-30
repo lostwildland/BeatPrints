@@ -1,17 +1,50 @@
+import argparse
+import re
+
 import questionary
 
 from rich import print
 
 from cli import conf, exutils, validate
 from BeatPrints import lyrics, spotify, poster, errors
+from BeatPrints.providers import ITunesProvider
 
 # Initialize components
 ly = lyrics.Lyrics()
 ps = poster.Poster(conf.POSTERS_DIR)
-sp = spotify.Spotify(conf.CLIENT_ID, conf.CLIENT_SECRET)
 
 
-def select_track(limit: int):
+def is_direct_lookup(query: str) -> bool:
+    """
+    Returns True when the query is a direct music URL or Spotify URI.
+    """
+    value = query.strip()
+    return bool(
+        re.match(r"https?://", value)
+        or re.fullmatch(r"spotify:(track|album):[0-9A-Za-z]{22}", value)
+    )
+
+
+def get_provider(provider_name: str):
+    """
+    Creates the selected metadata provider.
+    """
+    provider = provider_name.lower()
+
+    if provider == "itunes":
+        return ITunesProvider()
+
+    if provider == "spotify":
+        if not conf.CLIENT_ID or not conf.CLIENT_SECRET:
+            print("Spotify credentials are required when provider is set to spotify.")
+            exit(1)
+        return spotify.Spotify(conf.CLIENT_ID, conf.CLIENT_SECRET)
+
+    print(f"Unknown provider: {provider_name}. Use 'itunes' or 'spotify'.")
+    exit(1)
+
+
+def select_track(provider, limit: int):
     """
     Prompt user to search and select a track.
 
@@ -25,16 +58,21 @@ def select_track(limit: int):
 
     while repeat:
         query = questionary.text(
-            "• Type the track you love most:",
+            "• Type the track you love most, or paste a track URL:",
             validate=validate.LengthValidator,
             style=exutils.lavish,
             qmark="🎺",
         ).unsafe_ask()
 
-        result = sp.get_track(query, limit=limit)
+        result = provider.get_track(query, limit=limit)
+        direct = is_direct_lookup(query)
 
         # Clear the screen
         exutils.clear()
+
+        if direct:
+            print(f'Using "{result[0].name}" by {result[0].artist}.')
+            return result[0]
 
         # Show results
         print(f'{len(result)} results found for "{query}"!')
@@ -61,7 +99,7 @@ def select_track(limit: int):
             return result[int(choice) - 1]
 
 
-def select_album(limit: int):
+def select_album(provider, limit: int):
     """
     Prompt user to search and select an album.
 
@@ -84,16 +122,21 @@ def select_album(limit: int):
 
     while repeat:
         query = questionary.text(
-            "• Type the album you love most:",
+            "• Type the album you love most, or paste an album URL:",
             validate=validate.LengthValidator,
             style=exutils.lavish,
             qmark="💿️",
         ).unsafe_ask()
 
-        result = sp.get_album(query, limit, shuffle)
+        result = provider.get_album(query, limit, shuffle)
+        direct = is_direct_lookup(query)
 
         # Clear the screen
         exutils.clear()
+
+        if direct:
+            print(f'Using "{result[0].name}" by {result[0].artist}.')
+            return result[0], index
 
         # Show results
         print(f'{len(result)} results found for "{query}"!')
@@ -220,7 +263,7 @@ def poster_features():
     return theme, accent, image_path
 
 
-def create_poster():
+def create_poster(provider_name: str, code_mode: str):
     """
     Create a poster based on user input.
     """
@@ -232,31 +275,47 @@ def create_poster():
     ).unsafe_ask()
 
     theme, accent, image = poster_features()
+    provider = get_provider(provider_name)
 
     # Clear the screen
     exutils.clear()
 
     # Generate posters
     if poster_type == "Track Poster":
-        track = select_track(conf.SEARCH_LIMIT)
+        track = select_track(provider, conf.SEARCH_LIMIT)
 
         if track:
             lyrics = handle_lyrics(track)
 
             exutils.clear()
-            ps.track(track, lyrics, accent, theme, image)
+            ps.track(track, lyrics, accent, theme, image, code=code_mode)
     else:
-        album = select_album(conf.SEARCH_LIMIT)
+        album = select_album(provider, conf.SEARCH_LIMIT)
 
         if album:
-            ps.album(*album, accent, theme, image)
+            ps.album(*album, accent, theme, image, code=code_mode)
 
 
 def main():
     exutils.clear()
 
     try:
-        create_poster()
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "--provider",
+            choices=["itunes", "spotify"],
+            default=conf.PROVIDER,
+            help="Metadata provider to use.",
+        )
+        parser.add_argument(
+            "--code",
+            choices=["auto", "spotify", "none"],
+            default=conf.CODE_MODE,
+            help="Poster code area behavior.",
+        )
+        args = parser.parse_args()
+
+        create_poster(args.provider, args.code)
     except KeyboardInterrupt:
         exutils.clear()
         print("👋 Alright, no problem! See you next time.")

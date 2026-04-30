@@ -7,6 +7,7 @@ Provides essential image functions to generate posters.
 import io
 import os
 import random
+import re
 import requests
 
 from pathlib import Path
@@ -124,7 +125,7 @@ def magicify(image: Image.Image) -> Image.Image:
     return contrast.enhance(0.8)
 
 
-def scannable(
+def spotify_code(
     id: str,
     theme: ThemesSelector.Options = "Light",
     item: Literal["track", "album"] = "track",
@@ -142,9 +143,10 @@ def scannable(
     """
 
     variant = t.THEMES[theme]
+    spotify_id = spotify_identifier(id, item)
 
     # URL to fetch the scannable code
-    scan_url = f"https://scannables.scdn.co/uri/plain/png/101010/white/1280/spotify:{item}:{id}"
+    scan_url = f"https://scannables.scdn.co/uri/plain/png/101010/white/1280/spotify:{item}:{spotify_id}"
 
     # Fetch the scannable image data from Spotify
     data = requests.get(scan_url).content
@@ -165,6 +167,36 @@ def scannable(
 
         # Resize the image
         return scan_code.resize(s.SCANCODE, Image.Resampling.BICUBIC)
+
+
+def scannable(
+    id: str,
+    theme: ThemesSelector.Options = "Light",
+    item: Literal["track", "album"] = "track",
+) -> Image.Image:
+    """
+    Backward-compatible alias for Spotify scannable code generation.
+    """
+    return spotify_code(id, theme, item)
+
+
+def spotify_identifier(value: str, item: Literal["track", "album"] = "track") -> str:
+    """
+    Extracts a Spotify ID from a Spotify ID, URI, or open.spotify.com URL.
+    """
+    cleaned = value.strip().split("?")[0]
+
+    uri = re.fullmatch(r"spotify:(track|album):([0-9A-Za-z]{22})", cleaned)
+    if uri:
+        return uri.group(2)
+
+    url = re.fullmatch(
+        rf"https?://open\.spotify\.com/{item}/([0-9A-Za-z]{{22}})", cleaned
+    )
+    if url:
+        return url.group(1)
+
+    return cleaned
 
 
 def cover(url: str, path: Optional[str]) -> Image.Image:

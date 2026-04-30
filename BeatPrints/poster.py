@@ -7,7 +7,7 @@ Generates posters based on track or album information.
 import os
 
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Literal, Optional, Tuple, Union
 
 from PIL import Image, ImageDraw
 
@@ -74,15 +74,43 @@ class Poster:
             anchor="ls",
         )
         # Add release year and label info
+        release_label = (
+            f"{metadata.released}\n{metadata.label}"
+            if metadata.label
+            else metadata.released
+        )
         write.text(
             draw,
             p.LABEL,
-            f"{metadata.released}\n{metadata.label}",
+            release_label,
             color,
             write.font("Regular"),
             s.LABEL,
             anchor="rt",
         )
+
+    def _code_image(
+        self,
+        metadata: Union[TrackMetadata, AlbumMetadata],
+        theme: ThemesSelector.Options,
+        item: Literal["track", "album"],
+        code: Literal["auto", "spotify", "none"] = "auto",
+    ) -> Optional[Image.Image]:
+        """
+        Selects the code-area image without assuming provider IDs are Spotify IDs.
+        """
+        spotify_id = metadata.spotify_uri or metadata.spotify_id
+
+        if spotify_id and code in ("auto", "spotify"):
+            return image.spotify_code(spotify_id, theme, item)
+
+        if code == "spotify":
+            raise ValueError("Spotify code mode requires a Spotify URI or ID.")
+
+        if code in ("auto", "none"):
+            return None
+
+        raise ValueError(f"Unknown code mode: {code}")
 
     def track(
         self,
@@ -91,6 +119,7 @@ class Poster:
         accent: bool = False,
         theme: ThemesSelector.Options = "Light",
         pcover: Optional[str] = None,
+        code: Literal["auto", "spotify", "none"] = "auto",
     ) -> None:
         """
         Generates a poster for a track, which includes lyrics.
@@ -101,6 +130,7 @@ class Poster:
             accent (bool, optional): Adds an accent at the bottom of the poster. Defaults to False.
             theme (ThemesSelector.Options, optional): Specifies the theme to use. Must be one of "Light", "Dark", "Catppuccin", "Gruvbox", "Nord", "RosePine", or "Everforest".  Defaults to "Light".
             pcover (Optional[str]): Path to a custom cover image. Defaults to None.
+            code (Literal["auto", "spotify", "none"], optional): Code area behavior. Defaults to "auto".
         """
 
         # Check if the theme is valid or not
@@ -110,9 +140,9 @@ class Poster:
         # Get theme and template for the poster
         color, template = image.get_theme(theme)
 
-        # Get cover art and scancode
+        # Get cover art and code-area image
         cover = image.cover(metadata.image, pcover)
-        scannable = image.scannable(metadata.id, theme, "track")
+        code_image = self._code_image(metadata, theme, "track", code)
 
         with Image.open(template) as poster:
             poster = poster.convert("RGB")
@@ -120,7 +150,8 @@ class Poster:
 
             # Paste the cover and scancode
             poster.paste(cover, p.COVER)
-            poster.paste(scannable, p.SCANCODE, scannable)
+            if code_image:
+                poster.paste(code_image, p.SCANCODE, code_image)
 
             # Add an accent at the bottom if True
             image.draw_palette(draw, cover, accent)
@@ -163,6 +194,7 @@ class Poster:
         accent: bool = False,
         theme: ThemesSelector.Options = "Light",
         pcover: Optional[str] = None,
+        code: Literal["auto", "spotify", "none"] = "auto",
     ) -> None:
         """
         Generates a poster for an album, which includes track listing.
@@ -173,6 +205,7 @@ class Poster:
             accent (bool, optional): Add an accent at the bottom of the poster. Defaults to False.
             theme (ThemesSelector.Options, optional): Specifies the theme to use. Must be one of "Light", "Dark", "Catppuccin", "Gruvbox", "Nord", "RosePine", or "Everforest". Defaults to "Light".
             pcover (Optional[str]): Path to a custom cover image. Defaults to None.
+            code (Literal["auto", "spotify", "none"], optional): Code area behavior. Defaults to "auto".
         """
 
         # Check if the theme mentioned is valid or not
@@ -182,17 +215,18 @@ class Poster:
         # Get theme colors and template for the poster
         color, template = image.get_theme(theme)
 
-        # Get cover art and spotify scannable code
+        # Get cover art and code-area image
         cover = image.cover(metadata.image, pcover)
-        scannable = image.scannable(metadata.id, theme, "album")
+        code_image = self._code_image(metadata, theme, "album", code)
 
         with Image.open(template) as poster:
             poster = poster.convert("RGB")
             draw = ImageDraw.Draw(poster)
 
-            # Paste the album cover and scannable Spotify code
+            # Paste the album cover and code-area image
             poster.paste(cover, p.COVER)
-            poster.paste(scannable, p.SCANCODE, scannable)
+            if code_image:
+                poster.paste(code_image, p.SCANCODE, code_image)
 
             # Optionally add a color palette or design accents
             image.draw_palette(draw, cover, accent)

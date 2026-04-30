@@ -6,52 +6,27 @@ Provides methods to retrieve track and album metadata from search queries, IDs, 
 
 import re
 import random
-import spotipy
 import datetime
 
 from typing import List
-from dataclasses import dataclass
 
-from spotipy.exceptions import SpotifyException
-from spotipy.oauth2 import SpotifyClientCredentials
-from spotipy.cache_handler import MemoryCacheHandler
+try:
+    import spotipy
+    from spotipy.exceptions import SpotifyException
+    from spotipy.oauth2 import SpotifyClientCredentials
+    from spotipy.cache_handler import MemoryCacheHandler
+except ImportError:
+    spotipy = None
+    SpotifyException = Exception
+    SpotifyClientCredentials = None
+    MemoryCacheHandler = None
 
+from BeatPrints.metadata import AlbumMetadata, TrackMetadata
 from BeatPrints.errors import (
     NoMatchingTrackFound,
     NoMatchingAlbumFound,
     InvalidSearchLimit,
 )
-
-
-@dataclass
-class TrackMetadata:
-    """
-    Data structure to store metadata for a track.
-    """
-
-    name: str
-    artist: str
-    album: str
-    released: str
-    duration: str
-    image: str
-    label: str
-    id: str
-
-
-@dataclass
-class AlbumMetadata:
-    """
-    Data structure to store metadata for an album, including a track list.
-    """
-
-    name: str
-    artist: str
-    released: str
-    image: str
-    label: str
-    id: str
-    tracks: List[str]
 
 
 class Spotify:
@@ -67,6 +42,11 @@ class Spotify:
             CLIENT_ID (str): Spotify API client ID.
             CLIENT_SECRET (str): Spotify API client secret.
         """
+        if spotipy is None:
+            raise RuntimeError(
+                "The Spotify provider requires the optional 'spotipy' dependency."
+            )
+
         authorization = SpotifyClientCredentials(
             client_id=CLIENT_ID,
             client_secret=CLIENT_SECRET,
@@ -137,6 +117,11 @@ class Spotify:
                 else track["artists"][0]["name"]
             ),
             "id": track["id"],
+            "source": "spotify",
+            "source_id": track["id"],
+            "external_url": track.get("external_urls", {}).get("spotify", ""),
+            "spotify_id": track["id"],
+            "spotify_uri": track["uri"],
         }
 
         return TrackMetadata(**metadata)
@@ -172,6 +157,11 @@ class Spotify:
             ),
             "id": album["id"],
             "tracks": tracks,
+            "source": "spotify",
+            "source_id": album["id"],
+            "external_url": album.get("external_urls", {}).get("spotify", ""),
+            "spotify_id": album["id"],
+            "spotify_uri": album["uri"],
         }
 
         return AlbumMetadata(**metadata)
